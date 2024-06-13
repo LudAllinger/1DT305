@@ -1,10 +1,10 @@
 # boot.py -- run on boot-up
-# boot.py -- run on boot-up
 import keys
 import network
 from time import sleep
 
 def connect():
+    print("boot")
     wlan = network.WLAN(network.STA_IF)         # Put modem on Station mode
     if not wlan.isconnected():                  # Check if already connected
         print('connecting to network...')
