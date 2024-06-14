@@ -1,5 +1,3 @@
-# main.py -- put your code here!
-# Import from libraries
 import dht
 import machine
 import time
