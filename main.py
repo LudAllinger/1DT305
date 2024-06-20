@@ -11,7 +11,7 @@ import ntptime
 
 # BEGIN SETTINGS
 # These need to be change to suit your environment
-SEND_INTERVAL = 600000    # milliseconds
+SEND_INTERVAL = 30000    # milliseconds
 last_sent_ticks = 0  # milliseconds
 
 tempSensor = dht.DHT11(machine.Pin(27))     # DHT11 Constructor 
@@ -56,23 +56,14 @@ ntptime.settime()
 # Add two hours to make up for the timezone
 timezone = 2 * 3600
 
-try:
-    while True:
-        client.check_msg()
+while True:
+    client.check_msg()
 
-        # Current time
-        ct = time.localtime(time.time() + timezone)
-        # Format
-        formatted_ct = "{:02}:{:02}:{:02} - {:02}/{:02}-{:04}".format(ct[3], ct[4], ct[5], ct[2], ct[1], ct[0])
+    # Current time
+    ct = time.localtime(time.time() + timezone)
+    # Format
+    formatted_ct = "{:02}:{:02}:{:02} - {:02}/{:02}-{:04}".format(ct[3], ct[4], ct[5], ct[2], ct[1], ct[0])
 
-        if (time.ticks_ms() - last_sent_ticks) >= SEND_INTERVAL:
-            send_data()
-            last_sent_ticks = time.ticks_ms()
-        
-        time.sleep(600)
-
-finally:
-    client.disconnect()
-    client = None
-    boot.disconnect()
-    print("Disconnected from Adafruit IO.")
+    if (time.ticks_ms() - last_sent_ticks) >= SEND_INTERVAL:
+        send_data()
+        last_sent_ticks = time.ticks_ms()
