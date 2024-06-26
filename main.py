@@ -13,7 +13,7 @@ import urequests
 # BEGIN SETTINGS
 # These need to be change to suit your environment
 SEND_INTERVAL_AIO = 600000    # milliseconds (10 min)
-SEND_INTERVAL_DISC = 3000  # millisecods (1 hour)
+SEND_INTERVAL_DISC = 3600000  # millisecods (1 hour)
 last_sent_ticks_aio = 0  # milliseconds
 last_sent_ticks_disc = 0  # milliseconds
 
@@ -89,7 +89,10 @@ def send_data_disc():
 
         # If it has something to compare
         if prev_temp is not None and prev_humid is not None and prev_dark is not None:
-            discord_message_param(temperature, humidity, darkness, prev_temp, prev_humid, prev_dark)
+            diff_temp = temperature - prev_temp
+            diff_humid = humidity - prev_humid
+            diff_dark = darkness - prev_dark
+            discord_message_param(temperature, humidity, darkness, diff_temp, diff_humid, diff_dark)
 
         # Update previous values
         prev_temp = temperature
@@ -110,23 +113,29 @@ def discord_message(message):
         print(f"Discord message failed: {e}")
 
 # Climate update every hour
-def discord_message_param(temp, humid, dark, prev_temp, prev_humid, prev_dark):
+def discord_message_param(temp, humid, dark, diff_temp, diff_humid, diff_dark):
     change = []
 
-    if temp != prev_temp:
-        change.append(f"-Temperature has gone from {prev_temp} to {temp} degrees")
+    if diff_temp < 0:
+        change.append(f"-Temperature is {temp} degrees, with an increase of {diff_temp} degrees")
+    elif diff_temp > 0:
+        change.append(f"-Temperature is {temp} degrees, with a decrease of {diff_temp} degrees")
     else:
-        change.append(f"-Temperature has remained the same at {temp} degrees")
+        change.append(f"-Temperature is {temp} degrees, same as before")
 
-    if humid != prev_humid:
-        change.append(f"-Humidity has gone from {prev_humid}% to {humid}%")
+    if diff_humid < 0:
+        change.append(f"-Humidity is {humid}%, with an increase of {diff_humid}%-points")
+    elif diff_humid > 0:
+        change.append(f"-Humidity is {humid}%, with a decrease of {diff_humid}%-points")
     else:
-        change.append(f"-Humidity has remained the same at {humid}%")
+        change.append(f"-Humidity is {humid}%, same as before")
 
-    if dark != prev_dark:
-        change.append(f"-Temperature has gone from {prev_dark}% to {dark}%")
+    if diff_dark > 0:
+        change.append(f"-Darkness is {dark}%, with an increase of {diff_dark}%-points")
+    elif diff_dark < 0:
+        change.append(f"-Darkness is {dark}%, with a decrease of {diff_dark}%-points")
     else:
-        change.append(f"-Temperature has remained the same at {dark}%")
+        change.append(f"-Darkness is {dark}%, same as before")
     
     message = "Since the last hour:\n" + "\n".join(change)
 
@@ -157,6 +166,7 @@ try:
     while True:
         try:
             client.check_msg()
+            time.sleep(1)
 
         # If an error occurs, try to reconnect
         except OSError as e:
