@@ -12,25 +12,38 @@ import urequests
 
 # BEGIN SETTINGS
 # These need to be change to suit your environment
-SEND_INTERVAL = 600000    # milliseconds
-last_sent_ticks = 0  # milliseconds
+SEND_INTERVAL_AIO = 600000    # milliseconds (10 min)
+SEND_INTERVAL_DISC = 3000  # millisecods (1 hour)
+last_sent_ticks_aio = 0  # milliseconds
+last_sent_ticks_disc = 0  # milliseconds
 
 tempSensor = dht.DHT11(machine.Pin(27))     # DHT11 Constructor 
 ldr = machine.ADC(machine.Pin(26))
 
-previous_darkness_values = []
+# Hold previous values
+prev_dark_values = []
+prev_temp = None
+prev_humid = None
+prev_dark = None
+
+# Add all values from the past hour
 values = 6
 
-def send_data():
-    global previous_darkness_values
+# To make the "sun is rising/setting" message only appear once a day
+sunrise_message = False
+
+def send_data_aio():
+    global prev_dark_values, sunrise_message
 
     try:
+        # Collect data
         tempSensor.measure()
         temperature = tempSensor.temperature()
         humidity = tempSensor.humidity()
         light = ldr.read_u16()
         darkness = round(light / 65535 * 100, 2)
 
+        # Sending data to Adafruit
         print(f"Sending the temperature: {temperature} degrees to {keys.AIO_TEMP_FEED}")
         client.publish(topic=keys.AIO_TEMP_FEED, msg=str(temperature))
 
@@ -40,23 +53,53 @@ def send_data():
         print(f"Sending the darkness: {darkness}% to {keys.AIO_DARK_FEED}")
         client.publish(topic=keys.AIO_DARK_FEED, msg=str(darkness))
 
-        discord_message_param(temperature, humidity, darkness)
-
-        previous_darkness_values.append(darkness)
-        print("Values: ", previous_darkness_values)
-        if len(previous_darkness_values) > values:
-            previous_darkness_values.pop(0)
+        # Add darkness valus to list
+        prev_dark_values.append(darkness)
+        print("Values: ", prev_dark_values)
+        # If there are now more values than 6, remove the first
+        if len(prev_dark_values) > values:
+            prev_dark_values.pop(0)
         
-        if len(previous_darkness_values) == values:
-            average_darkness = sum(previous_darkness_values) / values
-            if darkness < average_darkness - 10:
+        if len(prev_dark_values) == values:
+            # Average darkness the past hour
+            average_darkness = sum(prev_dark_values) / values
+            # If the darkness has fallen significantly is the last hour = Sunrise
+            if darkness < average_darkness - 9 and not sunrise_message:
                 discord_message("Sun is rising")
-            elif darkness > average_darkness + 10:
+                sunrise_message = True
+                # If the darkness has risen significantly is the last hour = Sunset
+            elif darkness > average_darkness + 15 and sunrise_message:
                 discord_message("Sun is setting")
+                sunrise_message = False
 
     except Exception as e:
         print("Sending sensor data failed: ", e)
 
+
+def send_data_disc():
+    global prev_temp, prev_humid, prev_dark
+
+    try:
+        # Collect data
+        tempSensor.measure()
+        temperature = tempSensor.temperature()
+        humidity = tempSensor.humidity()
+        light = ldr.read_u16()
+        darkness = round(light / 65535 * 100, 2)
+
+        # If it has something to compare
+        if prev_temp is not None and prev_humid is not None and prev_dark is not None:
+            discord_message_param(temperature, humidity, darkness, prev_temp, prev_humid, prev_dark)
+
+        # Update previous values
+        prev_temp = temperature
+        prev_humid = humidity
+        prev_dark = darkness
+    
+    except Exception as e:
+        print("Discord data with prev has failed: ", e)
+
+# The sunrise/sunset message
 def discord_message(message):
     send = {"content": message}
     try:
@@ -66,12 +109,35 @@ def discord_message(message):
     except Exception as e:
         print(f"Discord message failed: {e}")
 
-def discord_message_param(temp, humid, dark):
-    send = {"content": f"Temperature: {temp} degrees, Humidity: {humid}%, Darkness: {dark}"}
+# Climate update every hour
+def discord_message_param(temp, humid, dark, prev_temp, prev_humid, prev_dark):
+    change = []
+
+    if temp != prev_temp:
+        change.append(f"-Temperature has gone from {prev_temp} to {temp} degrees")
+    else:
+        change.append(f"-Temperature has remained the same at {temp} degrees")
+
+    if humid != prev_humid:
+        change.append(f"-Humidity has gone from {prev_humid}% to {humid}%")
+    else:
+        change.append(f"-Humidity has remained the same at {humid}%")
+
+    if dark != prev_dark:
+        change.append(f"-Temperature has gone from {prev_dark}% to {dark}%")
+    else:
+        change.append(f"-Temperature has remained the same at {dark}%")
+    
+    message = "Since the last hour:\n" + "\n".join(change)
+
+    send = {
+        "content": message
+        }
+    
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
-        print(f"Discord message sent: Temperature: {temp} degrees, Humidity: {humid}%, Darkness: {dark}")
+
     except Exception as e:
         print(f"Discord message failed: {e}")
 
@@ -85,8 +151,6 @@ except KeyboardInterrupt:
 # Use the MQTT protocol to connect to Adafruit IO
 client = MQTTClient(keys.AIO_CLIENT_ID, keys.AIO_SERVER, keys.AIO_PORT, keys.AIO_USER, keys.AIO_KEY)
 
-# Subscribed messages will be delivered to this callback
-
 try:
     client.connect()
     print("Connected to {keys.AIO_SERVER}")
@@ -94,6 +158,7 @@ try:
         try:
             client.check_msg()
 
+        # If an error occurs, try to reconnect
         except OSError as e:
             print(f"Check_msg failed {e}")
             try:
@@ -102,10 +167,18 @@ try:
             except Exception as e:
                 print(f"Reconnection failed {e}")
                 time.sleep(10)
+        
+        current_ticks = time.ticks_ms()
 
-        if (time.ticks_ms() - last_sent_ticks) >= SEND_INTERVAL:
-            send_data()
-            last_sent_ticks = time.ticks_ms()
+        # Adafruit interval
+        if (current_ticks - last_sent_ticks_aio) >= SEND_INTERVAL_AIO:
+            send_data_aio()
+            last_sent_ticks_aio = current_ticks
+        
+        # Discord interval
+        if (current_ticks - last_sent_ticks_disc) >= SEND_INTERVAL_DISC:
+            send_data_disc()
+            last_sent_ticks_disc = current_ticks
 
 finally:
     client.disconnect()
