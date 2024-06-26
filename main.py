@@ -49,10 +49,10 @@ def send_data():
         
         if len(previous_darkness_values) == values:
             average_darkness = sum(previous_darkness_values) / values
-            if darkness > average_darkness + 10:
-                discord_message("Its getting brighter")
             if darkness < average_darkness - 10:
-                discord_message("Its getting darker")
+                discord_message("Sun is rising")
+            elif darkness > average_darkness + 10:
+                discord_message("Sun is setting")
 
     except Exception as e:
         print("Sending sensor data failed: ", e)
@@ -71,7 +71,7 @@ def discord_message_param(temp, humid, dark):
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
-        print(f"Discord message sent: Temperature: {temp} degrees, Humidity: {humid}%, Darkness:{dark}")
+        print(f"Discord message sent: Temperature: {temp} degrees, Humidity: {humid}%, Darkness: {dark}")
     except Exception as e:
         print(f"Discord message failed: {e}")
 
@@ -90,11 +90,6 @@ client = MQTTClient(keys.AIO_CLIENT_ID, keys.AIO_SERVER, keys.AIO_PORT, keys.AIO
 try:
     client.connect()
     print("Connected to {keys.AIO_SERVER}")
-
-    # Sync time with wifi
-    ntptime.settime()
-    # Add two hours to make up for the timezone
-    timezone = 2 * 3600
     while True:
         try:
             client.check_msg()
@@ -108,13 +103,6 @@ try:
                 print(f"Reconnection failed {e}")
                 time.sleep(10)
 
-        client.check_msg()
-
-        # Current time
-        ct = time.localtime(time.time() + timezone)
-        # Format
-        formatted_ct = "{:02}:{:02}:{:02} - {:02}/{:02}-{:04}".format(ct[3], ct[4], ct[5], ct[2], ct[1], ct[0])
-
         if (time.ticks_ms() - last_sent_ticks) >= SEND_INTERVAL:
             send_data()
             last_sent_ticks = time.ticks_ms()
@@ -122,5 +110,4 @@ try:
 finally:
     client.disconnect()
     client = None
-    boot.disconnect()
     print("Disconnected from Adafruit IO.")
