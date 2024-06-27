@@ -33,8 +33,6 @@ values = 6
 sunrise_message = False
 
 def send_data_aio():
-    global prev_dark_values, sunrise_message
-
     try:
         # Collect data
         tempSensor.measure()
@@ -53,27 +51,36 @@ def send_data_aio():
         print(f"Sending the darkness: {darkness}% to {keys.AIO_DARK_FEED}")
         client.publish(topic=keys.AIO_DARK_FEED, msg=str(darkness))
 
-        # Add darkness valus to list
-        prev_dark_values.append(darkness)
-        print("Values: ", prev_dark_values)
-        # If there are now more values than 6, remove the first
-        if len(prev_dark_values) > values:
-            prev_dark_values.pop(0)
-        
-        if len(prev_dark_values) == values:
-            # Average darkness the past hour
-            average_darkness = sum(prev_dark_values) / values
-            # If the darkness has fallen significantly is the last hour = Sunrise
-            if darkness < average_darkness - 9 and not sunrise_message:
-                discord_message("Sun is rising")
-                sunrise_message = True
-                # If the darkness has risen significantly is the last hour = Sunset
-            elif darkness > average_darkness + 15 and sunrise_message:
-                discord_message("Sun is setting")
-                sunrise_message = False
+        update_darkness_list(darkness)
+        sunrise_sunset(darkness)
 
     except Exception as e:
         print("Sending sensor data failed: ", e)
+
+
+def update_darkness_list(darkness):
+    # Add darkness valus to list
+    prev_dark_values.append(darkness)
+    print("Values before pop:", prev_dark_values)
+    # If there are now more values than 6, remove the first
+    if len(prev_dark_values) > values:
+        prev_dark_values.pop(0)
+        print("Darkness values after pop:", prev_dark_values)
+
+
+def sunrise_sunset(darkness):
+    global sunrise_message
+    if len(prev_dark_values) == values:
+        # Average darkness the past hour
+        average_darkness = sum(prev_dark_values) / values
+        # If the darkness has fallen significantly is the last hour = Sunrise
+        if darkness < average_darkness - 9 and not sunrise_message:
+            discord_message("Sun is rising")
+            sunrise_message = True
+            # If the darkness has risen significantly is the last hour = Sunset
+        elif darkness > average_darkness + 15 and sunrise_message:
+            discord_message("Sun is setting")
+            sunrise_message = False
 
 
 def send_data_disc():
@@ -93,6 +100,8 @@ def send_data_disc():
             diff_humid = humidity - prev_humid
             diff_dark = darkness - prev_dark
             discord_message_param(temperature, humidity, darkness, diff_temp, diff_humid, diff_dark)
+        else:
+            initial_disc_message(temperature, humidity, darkness)
 
         # Update previous values
         prev_temp = temperature
@@ -104,7 +113,7 @@ def send_data_disc():
 
 # The sunrise/sunset message
 def discord_message(message):
-    send = {"content": message}
+    send = {"content": message + "discord_message"}
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
@@ -112,41 +121,51 @@ def discord_message(message):
     except Exception as e:
         print(f"Discord message failed: {e}")
 
+
+def initial_disc_message(temp, humid, dark):
+    send = {"content": f"At start:\n-Temperature is at {temp} degrees\n-Humidity is at {humid}%\n-Darkness is at {dark}%"}
+    try:
+        response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
+        response.close()
+        print(f"Discord message: {send}")
+    except Exception as e:
+        print(f"Discord message failed: {e}")
+
 # Climate update every hour
 def discord_message_param(temp, humid, dark, diff_temp, diff_humid, diff_dark):
     change = []
 
-    if diff_temp < 0:
-        change.append(f"-Temperature is {temp} degrees, with an increase of {diff_temp} degrees")
-    elif diff_temp > 0:
-        change.append(f"-Temperature is {temp} degrees, with a decrease of {diff_temp} degrees")
+    # Appends the correct sentence
+    if diff_temp > 0:
+        change.append(f"- Temperature is at {temp} degrees, with an increase of {diff_temp:.2f} degrees")
+    elif diff_temp < 0:
+        change.append(f"- Temperature is at {temp} degrees, with a decrease of {abs(diff_temp):.2f} degrees")
     else:
-        change.append(f"-Temperature is {temp} degrees, same as before")
+        change.append(f"- Temperature is at {temp} degrees, same as before")
 
-    if diff_humid < 0:
-        change.append(f"-Humidity is {humid}%, with an increase of {diff_humid}%-points")
-    elif diff_humid > 0:
-        change.append(f"-Humidity is {humid}%, with a decrease of {diff_humid}%-points")
+    if diff_humid > 0:
+        change.append(f"- Humidity is at {humid}%, with an increase of {diff_humid:.2f} percentage points")
+    elif diff_humid < 0:
+        change.append(f"- Humidity is at {humid}%, with a decrease of {abs(diff_humid):.2f} percentage points")
     else:
-        change.append(f"-Humidity is {humid}%, same as before")
+        change.append(f"- Humidity is at {humid}%, same as before")
 
     if diff_dark > 0:
-        change.append(f"-Darkness is {dark}%, with an increase of {diff_dark}%-points")
+        change.append(f"- Darkness is at {dark}%, with an increase of {diff_dark:.3f} percentage points")
     elif diff_dark < 0:
-        change.append(f"-Darkness is {dark}%, with a decrease of {diff_dark}%-points")
+        change.append(f"- Darkness is at {dark}%, with a decrease of {abs(diff_dark):.3f} percentage points")
     else:
-        change.append(f"-Darkness is {dark}%, same as before")
+        change.append(f"- Darkness is at {dark}%, same as before")
     
-    message = "Since the last hour:\n" + "\n".join(change)
+    # From list to string
+    message = "\nSince the last hour:\n" + "\n".join(change)
 
-    send = {
-        "content": message
-        }
+    send = {"content": message}
     
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
-
+        print(f"Discord message: {message}")
     except Exception as e:
         print(f"Discord message failed: {e}")
 
@@ -166,8 +185,6 @@ try:
     while True:
         try:
             client.check_msg()
-            time.sleep(1)
-
         # If an error occurs, try to reconnect
         except OSError as e:
             print(f"Check_msg failed {e}")
