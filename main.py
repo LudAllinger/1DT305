@@ -53,7 +53,7 @@ def send_data_aio():
         print(f"Sending the humidity: {humidity}% to {keys.AIO_HUMID_FEED}")
         client.publish(topic=keys.AIO_HUMID_FEED, msg=str(humidity))
 
-        print(f"Sending the darkness: {darkness}% to {keys.AIO_DARK_FEED}")
+        print(f"Sending the darkness: {darkness}% to {keys.AIO_DARK_FEED}\n")
         client.publish(topic=keys.AIO_DARK_FEED, msg=str(darkness))
 
         # Check if it is getting brighter/darker
