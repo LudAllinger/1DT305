@@ -88,13 +88,13 @@ def sunrise_sunset(darkness):
         average_darkness = sum(prev_dark_values) / values
         #NOTE: the + and - integers may need to be updated depending on your location
         # If the darkness has fallen significantly is the last hour = Sunrise   
-        if darkness < average_darkness - 9 and not sunrise_message:
+        if darkness < average_darkness - 10 and sunrise_message:
             discord_message("It's getting brighter")
-            sunrise_message = True
-            # If the darkness has risen significantly is the last hour = Sunset
-        elif darkness > average_darkness + 15 and sunrise_message:
-            discord_message("It's getting darker")
             sunrise_message = False
+            # If the darkness has risen significantly is the last hour = Sunset
+        elif darkness > average_darkness + 20 and not sunrise_message:
+            discord_message("It's getting darker")
+            sunrise_message = True
 
 
 # Send data to discord every hour
