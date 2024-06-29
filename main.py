@@ -12,7 +12,7 @@ import urequests
 
 # BEGIN SETTINGS
 # These need to be change to suit your environment
-SEND_INTERVAL_AIO = 10000    # milliseconds (10 seconds)
+SEND_INTERVAL_AIO = 300000    # milliseconds (5 minutes)
 UPDATE_DARKNESS = 600000     # milliseconds (10 minutes)
 SEND_INTERVAL_DISC = 3600000  # millisecods (1 hour)
 
