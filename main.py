@@ -12,12 +12,16 @@ import urequests
 
 # BEGIN SETTINGS
 # These need to be change to suit your environment
-SEND_INTERVAL_AIO = 600000    # milliseconds (10 min)
+SEND_INTERVAL_AIO = 10000    # milliseconds (10 seconds)
+UPDATE_DARKNESS = 600000     # milliseconds (10 minutes)
 SEND_INTERVAL_DISC = 3600000  # millisecods (1 hour)
-last_sent_ticks_aio = 0  # milliseconds
-last_sent_ticks_disc = 0  # milliseconds
 
-tempSensor = dht.DHT11(machine.Pin(27))     # DHT11 Constructor 
+current_ticks = time.ticks_ms()
+last_sent_ticks_aio = current_ticks - SEND_INTERVAL_AIO  # milliseconds
+last_sent_ticks_darkness = current_ticks - UPDATE_DARKNESS  # millisecods
+last_sent_ticks_disc = current_ticks - SEND_INTERVAL_DISC  # milliseconds
+
+tempSensor = dht.DHT11(machine.Pin(27))  # DHT11 Constructor 
 ldr = machine.ADC(machine.Pin(26))
 
 # Hold previous values
@@ -51,13 +55,20 @@ def send_data_aio():
         print(f"Sending the darkness: {darkness}% to {keys.AIO_DARK_FEED}")
         client.publish(topic=keys.AIO_DARK_FEED, msg=str(darkness))
 
-        update_darkness_list(darkness)
+        # Check if it is getting brighter/darker
         sunrise_sunset(darkness)
+
+        # Append darkness values every 10 minutes ofr a 1 hour total
+        current_ticks = time.ticks_ms()
+        if (current_ticks - last_sent_ticks_darkness) >= UPDATE_DARKNESS:
+            update_darkness_list(darkness)
+            last_sent_ticks_darkness = current_ticks
 
     except Exception as e:
         print("Sending sensor data failed: ", e)
 
 
+# Saving the past 6 darkness values for a 1 hour interval
 def update_darkness_list(darkness):
     # Add darkness valus to list
     prev_dark_values.append(darkness)
@@ -68,24 +79,26 @@ def update_darkness_list(darkness):
         print("Darkness values after pop:", prev_dark_values)
 
 
+# Check if it is getting brighter or darker outside
 def sunrise_sunset(darkness):
     global sunrise_message
     if len(prev_dark_values) == values:
         # Average darkness the past hour
         average_darkness = sum(prev_dark_values) / values
-        # If the darkness has fallen significantly is the last hour = Sunrise
+        #NOTE: the + and - integers may need to be updated depending on your location
+        # If the darkness has fallen significantly is the last hour = Sunrise   
         if darkness < average_darkness - 9 and not sunrise_message:
-            discord_message("Sun is rising")
+            discord_message("It's getting brighter")
             sunrise_message = True
             # If the darkness has risen significantly is the last hour = Sunset
         elif darkness > average_darkness + 15 and sunrise_message:
-            discord_message("Sun is setting")
+            discord_message("It's getting darker")
             sunrise_message = False
 
 
+# Send data to discord every hour
 def send_data_disc():
     global prev_temp, prev_humid, prev_dark
-
     try:
         # Collect data
         tempSensor.measure()
@@ -93,7 +106,6 @@ def send_data_disc():
         humidity = tempSensor.humidity()
         light = ldr.read_u16()
         darkness = round(light / 65535 * 100, 2)
-
         # If it has something to compare
         if prev_temp is not None and prev_humid is not None and prev_dark is not None:
             diff_temp = temperature - prev_temp
@@ -111,9 +123,10 @@ def send_data_disc():
     except Exception as e:
         print("Discord data with prev has failed: ", e)
 
+
 # The sunrise/sunset message
 def discord_message(message):
-    send = {"content": message + "discord_message"}
+    send = {"content": message}
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
@@ -122,14 +135,16 @@ def discord_message(message):
         print(f"Discord message failed: {e}")
 
 
+# The first discord message upon start
 def initial_disc_message(temp, humid, dark):
     send = {"content": f"At start:\n-Temperature is at {temp} degrees\n-Humidity is at {humid}%\n-Darkness is at {dark}%"}
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
-        print(f"Discord message: {send}")
+        print(f"Initial Discord message sent")
     except Exception as e:
         print(f"Discord message failed: {e}")
+
 
 # Climate update every hour
 def discord_message_param(temp, humid, dark, diff_temp, diff_humid, diff_dark):
@@ -159,9 +174,8 @@ def discord_message_param(temp, humid, dark, diff_temp, diff_humid, diff_dark):
     
     # From list to string
     message = "\nSince the last hour:\n" + "\n".join(change)
-
+    # The message that gets sent
     send = {"content": message}
-    
     try:
         response = urequests.post(keys.DISCORD_WEBHOOK, json=send)
         response.close()
@@ -178,23 +192,20 @@ except KeyboardInterrupt:
 
 # Use the MQTT protocol to connect to Adafruit IO
 client = MQTTClient(keys.AIO_CLIENT_ID, keys.AIO_SERVER, keys.AIO_PORT, keys.AIO_USER, keys.AIO_KEY)
-
 try:
     client.connect()
-    print("Connected to {keys.AIO_SERVER}")
     while True:
         try:
             client.check_msg()
         # If an error occurs, try to reconnect
         except OSError as e:
-            print(f"Check_msg failed {e}")
             try:
                 client.disconnect()
                 client.connect()
             except Exception as e:
                 print(f"Reconnection failed {e}")
                 time.sleep(10)
-        
+
         current_ticks = time.ticks_ms()
 
         # Adafruit interval

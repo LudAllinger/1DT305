@@ -4,7 +4,6 @@ import network
 from time import sleep
 
 def connect():
-    print("boot")
     wlan = network.WLAN(network.STA_IF)         # Put modem on Station mode
     if not wlan.isconnected():                  # Check if already connected
         print('connecting to network...')
@@ -19,7 +18,6 @@ def connect():
             sleep(1)
     # Print the IP assigned by router
     ip = wlan.ifconfig()[0]
-    print('\nConnected on {}'.format(ip))
     return ip
 
 def http_get(url = 'http://detectportal.firefox.com/'):
