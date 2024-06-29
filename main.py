@@ -37,6 +37,7 @@ values = 6
 sunrise_message = False
 
 def send_data_aio():
+    global last_sent_ticks_darkness
     try:
         # Collect data
         tempSensor.measure()
