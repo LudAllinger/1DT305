@@ -59,7 +59,7 @@ def send_data_aio():
         # Check if it is getting brighter/darker
         sunrise_sunset(darkness)
 
-        # Append darkness values every 10 minutes ofr a 1 hour total
+        # Append darkness values every 10 minutes with a 1 hour total
         current_ticks = time.ticks_ms()
         if (current_ticks - last_sent_ticks_darkness) >= UPDATE_DARKNESS:
             update_darkness_list(darkness)
@@ -92,7 +92,7 @@ def sunrise_sunset(darkness):
             discord_message("It's getting brighter")
             sunrise_message = False
             # If the darkness has risen significantly is the last hour = Sunset
-        elif darkness > average_darkness + 20 and not sunrise_message:
+        elif darkness > average_darkness + 18 and not sunrise_message:
             discord_message("It's getting darker")
             sunrise_message = True
 
